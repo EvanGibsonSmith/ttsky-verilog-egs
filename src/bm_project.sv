@@ -49,7 +49,7 @@ module bm_project (
         if (!rst_n)
             count_r <= 0;
         else
-            count_r <= count_r + stream;
+            count_r <= count_r + (stream ? 16'd1 : 16'd0);
     end
 
     assign count  = count_r;

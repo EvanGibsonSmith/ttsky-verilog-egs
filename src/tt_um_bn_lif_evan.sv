@@ -36,9 +36,6 @@ module tt_um_bn_lif_evan (
     input  wire       rst_n
 );
 
-    assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
-
     // -------------------------------------------------------------------------
     // Pin decode
     // -------------------------------------------------------------------------
@@ -127,5 +124,17 @@ module tt_um_bn_lif_evan (
     // Output mux
     // -------------------------------------------------------------------------
     assign uo_out = proj_sel ? lif_uo : bm_uo;
+    
+    assign uio_out = 8'b0;
+    assign uio_oe  = 8'b0;
+
+    wire _unused = &{
+        ena,
+        uio_in,
+        bm_count,
+        bm_stream,
+        lif_membrane
+    };
+
 
 endmodule
