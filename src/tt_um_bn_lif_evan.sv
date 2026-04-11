@@ -28,17 +28,20 @@
 module tt_um_bn_lif_evan (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
-    inout  wire [7:0] uio,
+    input  wire [7:0] uio_in,
+    output  wire [7:0] uio_out,
+    output wire [7:0] uio_oe,
+    input  wire        ena,
     input  wire       clk,
-    input  wire       rst_n
+    input  wire       rst_n,
 );
 
     // -------------------------------------------------------------------------
     // Pin decode
     // -------------------------------------------------------------------------
-    wire        proj_sel = uio[7];   // 0=Bernoulli, 1=LIF
-    wire        lif_wr   = uio[6];   // LIF config write strobe
-    wire [2:0]  reg_addr = uio[5:3]; // LIF config register address
+    wire        proj_sel = uio_in[7];   // 0=Bernoulli, 1=LIF
+    wire        lif_wr   = uio_in[6];   // LIF config write strobe
+    wire [2:0]  reg_addr = uio_in[5:3]; // LIF config register address
 
     // uio is input-only from the DUT's perspective
     // Leave uio undriven (TB drives it, DUT only reads)
