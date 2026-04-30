@@ -57,8 +57,11 @@ module linear_lif #(
     logic signed [WIDE-1:0] v_next_wide;
     logic signed [DATA_WIDTH-1:0] v_next;
 
-    localparam logic signed [WIDE-1:0] SAT_MAX =  (1 <<< (DATA_WIDTH-1)) - 1;
-    localparam logic signed [WIDE-1:0] SAT_MIN = -(1 <<< (DATA_WIDTH-1));
+    // localparam logic signed [WIDE-1:0] SAT_MAX =  (1 <<< (DATA_WIDTH-1)) - 1;
+    // localparam logic signed [WIDE-1:0] SAT_MIN = -(1 <<< (DATA_WIDTH-1));
+
+    localparam logic signed [WIDE-1:0] SAT_MAX = (1 << (DATA_WIDTH-1)) - 1;
+    localparam logic signed [WIDE-1:0] SAT_MIN = -(1 << (DATA_WIDTH-1));
 
     assign v_wide = {{1{membrane[DATA_WIDTH-1]}}, membrane};
 
