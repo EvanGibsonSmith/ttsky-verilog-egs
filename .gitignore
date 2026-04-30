@@ -3,6 +3,7 @@
 *.vcd
 *.fst
 *.fst.hier
+.venv/
 runs
 tt_submission
 src/user_config.json
@@ -12,3 +13,5 @@ test/__pycache__/
 test/results.xml
 test/gate_level_netlist.v
 *.out
+
+test/tb.gtkw
