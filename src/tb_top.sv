@@ -87,7 +87,7 @@ module tb_top;
         ui_in    = 8'b1000_1000;
         true_p   = (8.0/16.0) * (8.0/16.0);
 
-        count_before = dut.u_bm.count_r;  // read internal count directly in sim
+        count_before = {uio_out, uo_out};  // full 16-bit count at start
 
         for (i = 0; i < 200; i++) begin
             tick();
@@ -96,7 +96,7 @@ module tb_top;
                          i, dut.u_bm.count_r, dut.u_bm.stream);
         end
 
-        count_after = dut.u_bm.count_r;
+        count_after = {uio_out, uo_out};
         est = real'(count_after - count_before) / 200.0;
         $display("Estimate=%.4f  True=%.4f  Error=%+.4f  (full count=%0d)",
                  est, true_p, est - true_p, count_after);
