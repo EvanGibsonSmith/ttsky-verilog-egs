@@ -1,37 +1,44 @@
 `default_nettype none
 
 // =============================================================================
-// tt_um_top — Tiny Tapeout top-level, two-project static select
+// tt_um_bn_lif_evan — Tiny Tapeout top-level, three-block static select
 //
 // Pin allocation
-//   uio[7]       — project select: 0 = Bernoulli, 1 = LIF
+// --------------
+//   ui_in[7:0]   — shared data input to all blocks
 //
-//   BERNOULLI (uio[7]=0):
-//     ui_in[7:4]   — top    (4-bit operand)
-//     ui_in[3:0]   — bottom (4-bit operand)
-//     uo_out[7:0]  — count[7:0]
+//   uio_in[7:6]  — 2-bit project select
+//                    2'b00 = Bernoulli stochastic multiplier
+//                    2'b01 = LIF neuron
+//                    2'b10 = Conventional 4x4 multiplier
+//                    2'b11 = reserved
+//   uio_in[5]    — LIF wr_en  (config write strobe, LIF mode only)
+//   uio_in[4:2]  — LIF reg_addr (config register select, LIF mode only)
+//   uio_in[1:0]  — unused / reserved
 //
-//   LIF (uio[7]=1):
-//     ui_in[7:0]   — input_val (run mode, every cycle)
-//     uio[6]       — wr_en (1 = config write this cycle)
-//     uio[5:3]     — reg_addr (config register select)
-//     uo_out[7:0]  — {membrane[7:1], spike}
+//   uo_out[7:0]  — output, meaning depends on project select:
+//                    00: Bernoulli count[7:0]  (lower byte of 16-bit accumulator)
+//                    01: {membrane[7:1], spike}
+//                    10: exact product a*b [7:0]  (8-bit, interpret as fixed-point /256)
 //
-//   LIF register address map (uio[5:3])
-//     3'h0 : input_val  — not written via reg file, comes from ui_in directly
-//     3'h1 : decay_val  signed [7:0]
-//     3'h2 : threshold  signed [7:0]
-//     3'h3 : v_reset    signed [7:0]
-//     3'h4 : mode_ctrl  [1:0] = {mode_decay, mode_add}
+//   uio_out[7:0] — Bernoulli count[15:8] (upper byte, always valid, all modes)
+//                  Gives full 16-bit Bernoulli count across uo_out + uio_out
+//                  when proj_sel=00. Stable but present regardless of sel.
+//
+// LIF register address map (uio_in[4:2])
+//   3'h1 : decay_val  signed [7:0]
+//   3'h2 : threshold  signed [7:0]
+//   3'h3 : v_reset    signed [7:0]
+//   3'h4 : mode_ctrl  [1:0] = {mode_decay, mode_add}
 // =============================================================================
 
 module tt_um_bn_lif_evan (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
-    output  wire [7:0] uio_out,
+    output wire [7:0] uio_out,
     output wire [7:0] uio_oe,
-    input  wire        ena,
+    input  wire       ena,
     input  wire       clk,
     input  wire       rst_n
 );
@@ -39,15 +46,12 @@ module tt_um_bn_lif_evan (
     // -------------------------------------------------------------------------
     // Pin decode
     // -------------------------------------------------------------------------
-    wire        proj_sel = uio_in[7];   // 0=Bernoulli, 1=LIF
-    wire        lif_wr   = uio_in[6];   // LIF config write strobe
-    wire [2:0]  reg_addr = uio_in[5:3]; // LIF config register address
-
-    // uio is input-only from the DUT's perspective
-    // Leave uio undriven (TB drives it, DUT only reads)
+    wire [1:0] proj_sel  = uio_in[7:6];
+    wire       lif_wr    = uio_in[5];
+    wire [2:0] reg_addr  = uio_in[4:2];
 
     // -------------------------------------------------------------------------
-    // Block 0: bm_project (Bernoulli multiplier)
+    // Block 0: Bernoulli stochastic multiplier
     // -------------------------------------------------------------------------
     wire [7:0]  bm_uo;
     wire [15:0] bm_count;
@@ -63,18 +67,15 @@ module tt_um_bn_lif_evan (
     );
 
     // -------------------------------------------------------------------------
-    // Block 1: linear_lif
+    // Block 1: Linear LIF neuron
     // -------------------------------------------------------------------------
-
-    // Config registers — written once at startup, stable during run
     logic signed [7:0] lif_decay_val;
     logic signed [7:0] lif_threshold;
     logic signed [7:0] lif_v_reset;
     logic              lif_mode_add;
     logic              lif_mode_decay;
 
-    // Config writes: only when LIF selected and wr_en asserted
-    wire lif_cfg_wr = proj_sel & lif_wr;
+    wire lif_cfg_wr = (proj_sel == 2'b01) & lif_wr;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -95,10 +96,8 @@ module tt_um_bn_lif_evan (
         end
     end
 
-    // input_val comes directly from ui_in every cycle when LIF is selected
     wire signed [7:0] lif_input_val = ui_in;
-
-    wire        lif_spike;
+    wire              lif_spike;
     wire signed [7:0] lif_membrane;
 
     linear_lif #(
@@ -107,7 +106,7 @@ module tt_um_bn_lif_evan (
     ) u_lif (
         .clk        (clk),
         .rst_n      (rst_n),
-        .en         (proj_sel & ~lif_wr),  // run only when selected and not writing config
+        .en         ((proj_sel == 2'b01) & ~lif_wr),
         .mode_add   (lif_mode_add),
         .mode_decay (lif_mode_decay),
         .input_val  (lif_input_val),
@@ -121,20 +120,27 @@ module tt_um_bn_lif_evan (
     wire [7:0] lif_uo = {lif_membrane[7:1], lif_spike};
 
     // -------------------------------------------------------------------------
+    // Block 2: Conventional 4x4 unsigned multiplier
+    // -------------------------------------------------------------------------
+    wire [7:0] mult_uo;
+
+    mult4 u_mult (
+        .ui_in  (ui_in),
+        .uo_out (mult_uo)
+    );
+
+    // -------------------------------------------------------------------------
     // Output mux
     // -------------------------------------------------------------------------
-    assign uo_out = proj_sel ? lif_uo : bm_uo;
-    
-    assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
+    assign uo_out = (proj_sel == 2'b00) ? bm_uo   :
+                    (proj_sel == 2'b01) ? lif_uo   :
+                    (proj_sel == 2'b10) ? mult_uo  :
+                                          8'b0;
 
-    wire _unused = &{
-        ena,
-        uio_in,
-        bm_count,
-        bm_stream,
-        lif_membrane
-    };
+    // uio_out: upper byte of Bernoulli count always present for readout
+    assign uio_out = bm_count[15:8];
+    assign uio_oe  = 8'hFF;  // all uio pins driven as outputs
 
+    wire _unused = &{ena, uio_in[1:0], bm_stream, lif_membrane};
 
 endmodule

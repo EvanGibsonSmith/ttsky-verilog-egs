@@ -5,11 +5,15 @@ module bm_project_tb;
 
     logic [7:0] ui_in;
     logic [7:0] uo_out;
-    logic       clk, rst_n;
+    logic [15:0] count;
+    logic        stream;
+    logic        clk, rst_n;
 
     bm_project dut (
         .ui_in  (ui_in),
         .uo_out (uo_out),
+        .count  (count),
+        .stream (stream),
         .clk    (clk),
         .rst_n  (rst_n)
     );
@@ -18,37 +22,37 @@ module bm_project_tb;
 
     localparam int NUM_TRIALS = 200;
     localparam int NUM_W      = 6;
-    localparam int W_WIDTH = 32;
+    localparam int W_EXAMPLE  = 32;
 
-    integer W_VALUES[0:NUM_W-1];
+    int W_VALUES[0:NUM_W-1];
 
     real estimates[0:NUM_W-1][0:NUM_TRIALS-1];
     real means[0:NUM_W-1];
     real variances[0:NUM_W-1];
 
-    task reset_dut();
+    task automatic reset_dut();
         rst_n = 0;
         repeat(4) @(posedge clk);
         rst_n = 1;
         @(posedge clk);
     endtask
 
-    task automatic run_trial(input integer W, output real estimate);
-        integer i;
-        integer count_start, count_end;
+    // Measure one W-window without resetting the DUT.
+    // Snapshots count at start and end to isolate this window.
+    task automatic run_trial(input int W, output real estimate);
+        int count_start, count_end;
         count_start = dut.count;
-        for (i = 0; i < W; i++) @(posedge clk);
+        repeat(W) @(posedge clk);
         count_end = dut.count;
         estimate = real'(count_end - count_start) / real'(W);
     endtask
 
-    // Single verbose example: print cycle-by-cycle for small W
+    // Verbose single run: prints cycle-by-cycle for small W
     task automatic run_example(
         input logic [3:0] top_val,
         input logic [3:0] bot_val,
-        input integer W
+        input int W
     );
-        integer i;
         real true_p, est;
         true_p = (real'(top_val) / 16.0) * (real'(bot_val) / 16.0);
 
@@ -57,32 +61,32 @@ module bm_project_tb;
 
         $display("\n--- Example: top=%0d/16 * bot=%0d/16 = %.4f, W=%0d ---",
                  top_val, bot_val, true_p, W);
-        $display("  cycle | rand_top | rand_bot | stream | running_count | running_est");
+        $display("  cycle | rand_top | rand_bot | stream | count | running_est");
 
-        for (i = 0; i < W; i++) begin
+        for (int i = 0; i < W; i++) begin
             @(posedge clk);
-            // $display("  %5d |    %2d    |    %2d    |   %0b    |     %5d     | %.4f",
-            //          i+1,
-            //          dut.rand_top, dut.rand_bottom,
-            //          dut.stream,
-            //          dut.count,
-            //          real'(dut.count) / real'(i+1));
+            $display("  %5d |    %2d    |    %2d    |   %0b    | %5d | %.4f",
+                     i+1,
+                     dut.rand_top, dut.rand_bot,
+                     dut.stream,
+                     dut.count,
+                     real'(dut.count) / real'(i+1));
         end
 
         est = real'(dut.count) / real'(W);
-        $display("  => Estimate: %.4f  True: %.4f  Error: %.4f",
+        $display("  => Estimate: %.4f  True: %.4f  Error: %+.4f",
                  est, true_p, est - true_p);
     endtask
 
-    integer w_idx, t;
-    real est, sum, sq_sum, mean, variance;
-    real top_p, bot_p, true_p;
-
+    // Variance sweep parameters
     localparam logic [3:0] TOP_VAL    = 4'd10;
     localparam logic [3:0] BOTTOM_VAL = 4'd6;
 
+    int    w_idx, t;
+    real   est, sum, sq_sum, mean, variance, true_p;
+
     initial begin
-        $dumpfile("sim.vcd");
+        $dumpfile("bm_sim.vcd");
         $dumpvars(0, bm_project_tb);
 
         clk   = 0;
@@ -96,17 +100,13 @@ module bm_project_tb;
         W_VALUES[4] = 256;
         W_VALUES[5] = 512;
 
-        // --- Explicit examples (small W so cycle table is readable) ---
-        // 0.5 * 0.5 = 0.25
-        run_example(4'd8, 4'd8, W_WIDTH);
-        // 0.75 * 0.5 = 0.375
-        run_example(4'd12, 4'd8, W_WIDTH);
-        // ~1.0 * ~1.0 = ~1.0
-        run_example(4'd15, 4'd15, W_WIDTH);
-        // 0.25 * 0.25 = 0.0625 (sparse stream, good stress test)
-        run_example(4'd4, 4'd4, W_WIDTH);
+        // --- Verbose examples ---
+        run_example(4'd8,  4'd8,  W_EXAMPLE);   // 0.5   * 0.5   = 0.2500
+        run_example(4'd12, 4'd8,  W_EXAMPLE);   // 0.75  * 0.5   = 0.3750
+        run_example(4'd15, 4'd15, W_EXAMPLE);   // 0.9375* 0.9375= 0.8789
+        run_example(4'd4,  4'd4,  W_EXAMPLE);   // 0.25  * 0.25  = 0.0625
 
-        // --- Variance sweep ---
+        // --- Variance sweep: top=10/16, bot=6/16, true product = 60/256 = 0.2344 ---
         $display("\n\n=== Variance Sweep: top=%0d/16, bot=%0d/16 ===", TOP_VAL, BOTTOM_VAL);
         true_p = (real'(TOP_VAL)/16.0) * (real'(BOTTOM_VAL)/16.0);
         $display("True product: %.4f", true_p);
