@@ -57,11 +57,8 @@ module linear_lif #(
     logic signed [WIDE-1:0] v_next_wide;
     logic signed [DATA_WIDTH-1:0] v_next;
 
-    // localparam logic signed [WIDE-1:0] SAT_MAX =  (1 <<< (DATA_WIDTH-1)) - 1;
-    // localparam logic signed [WIDE-1:0] SAT_MIN = -(1 <<< (DATA_WIDTH-1));
-
-    localparam logic signed [WIDE-1:0] SAT_MAX = (1 << (DATA_WIDTH-1)) - 1;
-    localparam logic signed [WIDE-1:0] SAT_MIN = -(1 << (DATA_WIDTH-1));
+    localparam logic signed [WIDE-1:0] SAT_MAX =  (1 <<< (DATA_WIDTH-1)) - 1;
+    localparam logic signed [WIDE-1:0] SAT_MIN = -(1 <<< (DATA_WIDTH-1));
 
     assign v_wide = {{1{membrane[DATA_WIDTH-1]}}, membrane};
 
@@ -73,16 +70,10 @@ module linear_lif #(
         ? v_after_add - {{(WIDE-DECAY_WIDTH){decay_val[DECAY_WIDTH-1]}}, decay_val}
         : v_after_add;
 
-    function automatic logic signed [DATA_WIDTH-1:0] saturate(
-        input logic signed [WIDE-1:0] val
-    );
-        if (val > SAT_MAX)      return SAT_MAX[DATA_WIDTH-1:0];
-        else if (val < SAT_MIN) return SAT_MIN[DATA_WIDTH-1:0];
-        else                    return val[DATA_WIDTH-1:0];
-    endfunction
-
     assign v_next_wide = v_after_decay;
-    assign v_next      = saturate(v_next_wide);
+    assign v_next      = (v_next_wide > SAT_MAX) ? SAT_MAX[DATA_WIDTH-1:0] :
+                         (v_next_wide < SAT_MIN) ? SAT_MIN[DATA_WIDTH-1:0] :
+                                                   v_next_wide[DATA_WIDTH-1:0];
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
