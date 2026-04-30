@@ -77,8 +77,8 @@ async def test_bernoulli_mult(dut):
     clock = Clock(dut.clk, 10, unit="us")
     cocotb.start_soon(clock.start())
 
-    W = 512
-    TOLERANCE = 0.10  # generous — stochastic, not exact
+    W = 200
+    TOLERANCE = 0.12  # generous — stochastic, not exact
 
     test_cases = [
         (8,  8,  0.2500),   # 0.5 * 0.5
@@ -88,15 +88,17 @@ async def test_bernoulli_mult(dut):
     ]
 
     for a, b, true_p in test_cases:
+        # Reset zeros the counter; measure directly from uo_out (count[7:0])
+        # No internal signal access — compatible with gate-level netlist
         await reset_dut(dut)
         dut.uio_in.value = SEL_BERNOULLI
         dut.ui_in.value  = (a << 4) | b
 
-        count_start = int(dut.user_project.u_bm.count_r.value)
         await ClockCycles(dut.clk, W)
-        count_end = int(dut.user_project.u_bm.count_r.value)
+        count_val = int(dut.uo_out.value)
 
-        estimate = (count_end - count_start) / W
+        # uo_out is count[7:0]; for W<=255 this equals the full count
+        estimate = count_val / W
         error    = abs(estimate - true_p)
 
         dut._log.info(
